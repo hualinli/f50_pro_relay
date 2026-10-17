@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-const iface = "ufi_sta0"
+const iface = "relay_sta0"
+const legacyIface = "ufi_sta0" // Recovery of ownership records written before v0.4.1.
 const lan = "192.168.0.0/24"
 const table = "30555"
 
@@ -77,7 +78,8 @@ func (n *networkState) command(name string, args ...string) (string, error) {
 
 type networkState struct {
 	Base          string
-	tools         Tools `json:"-"`
+	Interface     string `json:"interface,omitempty"`
+	tools         Tools  `json:"-"`
 	Owned, Active bool
 	NeedsCleanup  bool
 	Lease         Lease
@@ -110,6 +112,7 @@ func (n *networkState) init() error {
 			return errors.New("reserved firewall chain is already in use")
 		}
 	}
+	n.Interface = iface
 	n.Owned = true
 	if e := n.persist(); e != nil {
 		return e
@@ -213,9 +216,26 @@ func (n *networkState) Enable() error {
 	_, e := purgeClientConnections("")
 	return e
 }
+
+// Ownership records preserve the interface name across upgrades. Legacy records
+// did not store it; they exclusively owned ufi_sta0. Never infer ownership of APs.
+func (n *networkState) ownedInterface() (string, error) {
+	if n.Interface == "" {
+		return legacyIface, nil
+	}
+	if n.Interface != iface && n.Interface != legacyIface {
+		return "", errors.New("invalid owned relay interface")
+	}
+	return n.Interface, nil
+}
+
 func (n *networkState) Disable() error {
 	if !n.Owned {
 		return nil
+	}
+	iface, interfaceErr := n.ownedInterface()
+	if interfaceErr != nil {
+		return interfaceErr
 	}
 	var first error
 	b, e := n.command("ip", "rule", "show")
@@ -269,6 +289,10 @@ func (n *networkState) HealthyRules() bool {
 func (n *networkState) Cleanup() error {
 	if !n.Owned {
 		return nil
+	}
+	iface, interfaceErr := n.ownedInterface()
+	if interfaceErr != nil {
+		return interfaceErr
 	}
 	e := n.Disable()
 	if b, _ := n.command("ip", "rule", "show"); strings.Contains(b, "10950:") {

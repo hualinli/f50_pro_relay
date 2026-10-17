@@ -11,7 +11,7 @@ import (
 
 func TestWirelessLinkParsing(t *testing.T) {
 	// Use the same iw layout as the device, including different rates per direction.
-	s := "Connected to aa:bb:cc:dd:ee:ff (on ufi_sta0)\n\tSSID: private-network\n\tfreq: 5220\n\tsignal: -31 dBm\n\trx bitrate: 1200.9 MBit/s 80MHz HE-MCS 11 HE-NSS 2 HE-GI 0 HE-DCM 0\n\ttx bitrate: 1080.6 MBit/s 80MHz HE-MCS 10 HE-NSS 2 HE-GI 0 HE-DCM 0\n"
+	s := "Connected to aa:bb:cc:dd:ee:ff (on relay_sta0)\n\tSSID: private-network\n\tfreq: 5220\n\tsignal: -31 dBm\n\trx bitrate: 1200.9 MBit/s 80MHz HE-MCS 11 HE-NSS 2 HE-GI 0 HE-DCM 0\n\ttx bitrate: 1080.6 MBit/s 80MHz HE-MCS 10 HE-NSS 2 HE-GI 0 HE-DCM 0\n"
 	l := parseWirelessLink(s)
 	if !l.Connected || *l.Signal != -31 || *l.Frequency != 5220 || *l.Channel != 44 || *l.Width != 80 || l.Standard != "WiFi 6" || *l.RXMbps != 1200.9 || *l.TXMbps != 1080.6 {
 		t.Fatalf("incorrect link: %+v", l)

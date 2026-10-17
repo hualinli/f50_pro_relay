@@ -9,10 +9,10 @@ import (
 )
 
 // Version identifies the standalone relay module.
-const Version = "0.4.0"
+const Version = "0.4.1"
 
 // Options configures an Android relay instance. New does not start processes or change networking.
-// Instances on one device share the reserved ufi_sta0 interface and table 30555;
+// Instances on one device share the reserved relay_sta0 interface and table 30555;
 // callers must use one Manager for that device.
 type Options struct {
 	BaseDir    string

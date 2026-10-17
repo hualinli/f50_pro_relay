@@ -51,7 +51,7 @@ status, err := manager.Status(ctx)
 
 - `Options.Tools` 可传入 iw、wpa_supplicant、BusyBox、ip、iptables 和 ip6tables 的绝对路径；空值使用 F50 Pro 默认路径。
 - `Options.BaseDir` 是 root 私有目录，`RuntimeDir` 是 wifi 用户可访问的私有目录，两者必须分离，不能相互嵌套。
-- 仍针对当前设备的 br0、192.168.0.0/24、ufi_sta0 与表 30555。同一设备只运行一个 Manager，不支持同时管理多个中继实例。
+- 仍针对当前设备的 br0、192.168.0.0/24、relay_sta0 与表 30555。同一设备只运行一个 Manager，不支持同时管理多个中继实例。
 - 需要 Android/Linux、相应系统工具和网络管理权限；可在 macOS 构建/测试，不能在那里实际管理此设备。
 - `ImportConfig(options, config)` 用于离线导入；`Recover(options)` 用于异常退出后的恢复。两者均获取同一把安装锁，拒绝修改正在运行的实例。
 - 密码继续保存在 root 0600 的配置文件和 wifi 0600 的运行配置中。公开状态与日志不输出密码。
@@ -102,3 +102,5 @@ replace f50_pro_relay => ../f50_pro_relay
 结果 `Observation` 包含采样时间、链路参数（RSSI、频段/信道、带宽、收发 PHY 速率与 MCS/NSS/GI/DCM）、当前网卡收发字节和接口编号。断开时 `Link.Connected=false`，计数缺省；链路查询失败返回 `ErrLinkUnavailable`，计数读取失败返回带已知链路的部分结果和 `ErrCountersUnavailable`。请求取消会终止查询子进程。错误可用 `errors.Is` 判断，显示文字由宿主负责。
 
 `ReadObservation(ctx, options)` 用于诊断已有安装，不启动 Manager、不获取网络所有权，也不创建配置；面板并行验收时使用。它仍只是 Go 函数，没有 HTTP 或命令行入口。
+
+中继虚拟客户端接口自 v0.4.1 起使用 `relay_sta0`（relay station）。所有连接、路由、探测和观测使用同一内部常量；panel 无需指定接口名称。网络所有权记录保存实际接口名，异常恢复兼容旧版 `ufi_sta0` 记录；升级时先停止旧实例并清理旧接口，再启动新版。热点接口仍为 `wlan0`。
