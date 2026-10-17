@@ -51,7 +51,7 @@ status, err := manager.Status(ctx)
 
 - `Options.Tools` 可传入 iw、wpa_supplicant、BusyBox、ip、iptables 和 ip6tables 的绝对路径；空值使用 F50 Pro 默认路径。
 - `Options.BaseDir` 是 root 私有目录，`RuntimeDir` 是 wifi 用户可访问的私有目录，两者必须分离，不能相互嵌套。
-- 仍针对当前设备的 br0、192.168.0.0/24、relay_sta0 与表 30555。同一设备只运行一个 Manager，不支持同时管理多个中继实例。
+- 仍针对当前设备的 br0、relay_sta0 与表 30555；下游 IPv4 地址与掩码动态读取。同一设备只运行一个 Manager，不支持同时管理多个中继实例。
 - 需要 Android/Linux、相应系统工具和网络管理权限；可在 macOS 构建/测试，不能在那里实际管理此设备。
 - `ImportConfig(options, config)` 用于离线导入；`Recover(options)` 用于异常退出后的恢复。两者均获取同一把安装锁，拒绝修改正在运行的实例。
 - 密码继续保存在 root 0600 的配置文件和 wifi 0600 的运行配置中。公开状态与日志不输出密码。
@@ -104,3 +104,9 @@ replace f50_pro_relay => ../f50_pro_relay
 `ReadObservation(ctx, options)` 用于诊断已有安装，不启动 Manager、不获取网络所有权，也不创建配置；面板并行验收时使用。它仍只是 Go 函数，没有 HTTP 或命令行入口。
 
 中继虚拟客户端接口自 v0.4.1 起使用 `relay_sta0`（relay station）。所有连接、路由、探测和观测使用同一内部常量；panel 无需指定接口名称。网络所有权记录保存实际接口名，异常恢复兼容旧版 `ufi_sta0` 记录；升级时先停止旧实例并清理旧接口，再启动新版。热点接口仍为 `wlan0`。
+
+## 动态下游网段（v0.5.0）
+
+下游网络由 `ReadLAN()` 从实际 br0 地址与前缀读取；没有可用 IPv4 或同时存在多个候选时不猜测。启动、租约应用和现有检查周期均核实网络；地址、前缀或接口编号变化时先撤销旧策略/NAT/DNS 转发规则，退回蜂窝，再为新网段获取并应用上游租约。冲突检测使用当前下游 CIDR，支持包含关系，不再把 192.168.0.0/24 当成固定保留网段。
+
+网络所有权文件保存 LAN 地址、CIDR 和接口，故异常清理按创建规则时的旧网段执行。旧版本未记录 LAN 的文件，仅在恢复清理时按其历史固定网段解释。连接跟踪清理也使用相应 LAN，保留下游本地管理会话。`Lease.Valid` 检查租约结构与有效期，实际路由应用还会检查当前 LAN 重叠。

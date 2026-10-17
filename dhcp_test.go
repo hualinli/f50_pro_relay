@@ -98,7 +98,7 @@ func TestDHCPRouteFailureIsRetried(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	d := &engine{base: base, options: opts, generation: 1, leaseStamp: "current", network: networkState{Base: base, tools: opts.Tools}}
+	d := &engine{base: base, options: opts, generation: 1, leaseStamp: "current", network: networkState{Base: base, tools: opts.Tools, readLAN: func() (LAN, error) { return LAN{Interface: "br0", Address: "192.168.0.1", CIDR: "192.168.0.0/24"}, nil }}}
 	raw := "current\ncallback\nbound\n192.168.10.2\n255.255.255.0\n192.168.10.1\n1.1.1.1\n7200\n"
 	if e := os.WriteFile(filepath.Join(base, "dhcp-event"), []byte(raw), 0600); e != nil {
 		t.Fatal(e)

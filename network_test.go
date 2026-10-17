@@ -11,8 +11,6 @@ func TestLeaseRejectsUnsafeRoutes(t *testing.T) {
 		t.Fatal("valid lease rejected")
 	}
 	for _, mutate := range []func(*Lease){
-		func(l *Lease) { l.IP = "192.168.0.2"; l.Gateway = "192.168.0.1" },
-		func(l *Lease) { l.Subnet = "255.255.0.0" },
 		func(l *Lease) { l.Subnet = "255.0.255.0" },
 		func(l *Lease) { l.Gateway = "10.0.0.1" },
 		func(l *Lease) { l.DNS = []string{"1.1.1.1;reboot"} },

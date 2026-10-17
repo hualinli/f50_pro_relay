@@ -18,7 +18,7 @@ func TestConnectionCleanupPreservesManagement(t *testing.T) {
 		{"ipv4 2 tcp 6 100 src=192.168.10.106 dst=1.1.1.1 sport=55556 dport=443 src=1.1.1.1 dst=192.168.10.106 sport=443 dport=55556", false},
 	}
 	for _, c := range cases {
-		f, ok := parseFlow(c.line)
+		f, ok := parseFlow(c.line, LAN{Interface: "br0", Address: "192.168.0.1", CIDR: "192.168.0.0/24"})
 		if ok != c.ok {
 			t.Fatal("incorrect flow ownership", c.line)
 		}

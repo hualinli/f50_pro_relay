@@ -15,7 +15,6 @@ import (
 
 const iface = "relay_sta0"
 const legacyIface = "ufi_sta0" // Recovery of ownership records written before v0.4.1.
-const lan = "192.168.0.0/24"
 const table = "30555"
 
 type Lease struct {
@@ -43,10 +42,6 @@ func validateLease(l Lease) error {
 	subnet := &net.IPNet{IP: ip.Mask(net.IPMask(maskIP)), Mask: net.IPMask(maskIP)}
 	if !subnet.Contains(gw) || ip.Equal(gw) || ip.Equal(subnet.IP) {
 		return errors.New("invalid DHCP gateway or host address")
-	}
-	_, local, _ := net.ParseCIDR(lan)
-	if local.Contains(ip) || subnet.Contains(local.IP) {
-		return errors.New("upstream overlaps hotspot LAN")
 	}
 	for _, d := range l.DNS {
 		if net.ParseIP(d).To4() == nil {
@@ -80,6 +75,8 @@ type networkState struct {
 	Base          string
 	Interface     string `json:"interface,omitempty"`
 	tools         Tools  `json:"-"`
+	LAN           *LAN   `json:"lan,omitempty"`
+	readLAN       func() (LAN, error)
 	Owned, Active bool
 	NeedsCleanup  bool
 	Lease         Lease
@@ -89,6 +86,11 @@ func (n *networkState) persist() error {
 	return atomicJSON(filepath.Join(n.Base, "network.json"), n, 0600)
 }
 func (n *networkState) init() error {
+	local, e := n.detectLAN()
+	if e != nil {
+		return e
+	}
+	n.LAN = &local
 	for _, r := range []string{"10950:", "10960:"} {
 		b, e := n.command("ip", "rule", "show")
 		if e != nil {
@@ -120,13 +122,25 @@ func (n *networkState) init() error {
 	if _, e := n.command(n.tools.IW, "phy", "phy0", "interface", "add", iface, "type", "managed"); e != nil {
 		return e
 	}
-	_, e := n.command("ip", "link", "set", "dev", iface, "up")
+	_, e = n.command("ip", "link", "set", "dev", iface, "up")
 	return e
 }
 func (n *networkState) Prepare(l Lease) error {
+	local, e := n.detectLAN()
+	if e != nil {
+		return e
+	}
+	if n.LAN != nil && *n.LAN != local && (n.Active || n.NeedsCleanup) {
+		return errors.New("hotspot LAN changed; cleanup required")
+	}
 	if e := validateLease(l); e != nil {
 		return e
 	}
+	if e := checkOverlap(l, local); e != nil {
+		return e
+	}
+	n.LAN = &local
+	lan := local.CIDR
 	if n.Lease.IP != "" && n.Lease.IP != l.IP {
 		_, _ = n.command("ip", "addr", "del", n.Lease.IP+"/"+n.Lease.Prefix(), "dev", iface)
 	}
@@ -136,7 +150,7 @@ func (n *networkState) Prepare(l Lease) error {
 	if _, e := n.command("ip", "route", "flush", "table", table); e != nil {
 		return e
 	}
-	for _, a := range [][]string{{"route", "add", "table", table, l.Network(), "dev", iface, "src", l.IP}, {"route", "add", "table", table, lan, "dev", "br0", "src", "192.168.0.1"}, {"route", "add", "table", table, "default", "via", l.Gateway, "dev", iface, "src", l.IP}} {
+	for _, a := range [][]string{{"route", "add", "table", table, l.Network(), "dev", iface, "src", l.IP}, {"route", "add", "table", table, lan, "dev", "br0", "src", local.Address}, {"route", "add", "table", table, "default", "via", l.Gateway, "dev", iface, "src", l.IP}} {
 		if _, e := n.command("ip", a...); e != nil {
 			return e
 		}
@@ -170,8 +184,16 @@ func (n *networkState) removeRule(name string, args ...string) {
 	}
 }
 func (n *networkState) Enable() error {
+	local, e := n.ownedLAN()
+	if e != nil {
+		return e
+	}
+	lan := local.CIDR
 	if !n.Owned || !n.Lease.Valid(time.Now()) {
 		return errors.New("no valid managed Wi-Fi lease")
+	}
+	if e := checkOverlap(n.Lease, local); e != nil {
+		return e
 	}
 	if n.Active && n.HealthyRules() {
 		return nil
@@ -213,7 +235,7 @@ func (n *networkState) Enable() error {
 		_ = n.Disable()
 		return e
 	}
-	_, e := purgeClientConnections("")
+	_, e = purgeClientConnections("", local)
 	return e
 }
 
@@ -233,6 +255,11 @@ func (n *networkState) Disable() error {
 	if !n.Owned {
 		return nil
 	}
+	local, lanErr := n.ownedLAN()
+	if lanErr != nil {
+		return lanErr
+	}
+	lan := local.CIDR
 	iface, interfaceErr := n.ownedInterface()
 	if interfaceErr != nil {
 		return interfaceErr
@@ -262,7 +289,7 @@ func (n *networkState) Disable() error {
 		}
 	}
 	if n.Active {
-		if _, e := purgeClientConnections(n.Lease.IP); e != nil && first == nil {
+		if _, e := purgeClientConnections(n.Lease.IP, local); e != nil && first == nil {
 			first = e
 		}
 	}
@@ -280,6 +307,11 @@ func (n *networkState) Disable() error {
 	return first
 }
 func (n *networkState) HealthyRules() bool {
+	local, e := n.ownedLAN()
+	if e != nil {
+		return false
+	}
+	lan := local.CIDR
 	b, e := n.command("ip", "rule", "show")
 	if e != nil || !strings.Contains(b, "10960:") {
 		return false

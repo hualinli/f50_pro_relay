@@ -294,6 +294,9 @@ func (d *engine) scanNow() error {
 	return nil
 }
 func (d *engine) tick() {
+	if !d.refreshLAN() {
+		return
+	}
 	now := time.Now()
 	d.readDHCPEvent()
 	if d.network.NeedsCleanup {

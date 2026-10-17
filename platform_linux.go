@@ -5,9 +5,7 @@ package relay
 import (
 	"encoding/binary"
 	"errors"
-	"net"
 	"os"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,52 +24,6 @@ func attr(kind uint16, data []byte) []byte {
 	return b
 }
 
-type flow struct {
-	src, dst     net.IP
-	sport, dport uint16
-	proto        byte
-	replyDst     string
-}
-
-func parseFlow(line string) (flow, bool) {
-	var f flow
-	src, dst, sport, dport := 0, 0, 0, 0
-	for _, v := range strings.Fields(line) {
-		switch {
-		case v == "tcp":
-			f.proto = 6
-		case v == "udp":
-			f.proto = 17
-		case strings.HasPrefix(v, "src="):
-			if src == 0 {
-				f.src = net.ParseIP(v[4:]).To4()
-			}
-			src++
-		case strings.HasPrefix(v, "dst="):
-			if dst == 0 {
-				f.dst = net.ParseIP(v[4:]).To4()
-			} else if dst == 1 {
-				f.replyDst = v[4:]
-			}
-			dst++
-		case strings.HasPrefix(v, "sport="):
-			if sport == 0 {
-				n, _ := strconv.Atoi(v[6:])
-				f.sport = uint16(n)
-			}
-			sport++
-		case strings.HasPrefix(v, "dport="):
-			if dport == 0 {
-				n, _ := strconv.Atoi(v[6:])
-				f.dport = uint16(n)
-			}
-			dport++
-		}
-	}
-	_, local, _ := net.ParseCIDR(lan)
-	// Never remove local management sessions. DNS is the sole local exception.
-	return f, f.src != nil && f.dst != nil && local.Contains(f.src) && (f.proto == 6 || f.proto == 17) && (!local.Contains(f.dst) || f.dport == 53)
-}
 func deleteMessage(f flow, seq uint32) []byte {
 	ip := append(attr(1, f.src), attr(2, f.dst)...)
 	ports := make([]byte, 2)
@@ -88,7 +40,7 @@ func deleteMessage(f flow, seq uint32) []byte {
 	binary.LittleEndian.PutUint32(b[8:], seq)
 	return append(b, body...)
 }
-func purgeClientConnections(oldIP string) (int, error) {
+func purgeClientConnections(oldIP string, lan LAN) (int, error) {
 	b, e := os.ReadFile("/proc/net/nf_conntrack")
 	if e != nil {
 		return 0, e
@@ -106,7 +58,7 @@ func purgeClientConnections(oldIP string) (int, error) {
 	seq := uint32(1)
 	until := time.Now().Add(3 * time.Second)
 	for _, line := range strings.Split(string(b), "\n") {
-		f, ok := parseFlow(line)
+		f, ok := parseFlow(line, lan)
 		if !ok || (oldIP != "" && f.replyDst != oldIP) {
 			continue
 		}
