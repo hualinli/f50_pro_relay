@@ -2,14 +2,16 @@ package relay
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 )
 
 // Version identifies the standalone relay module.
-const Version = "0.5.0"
+const Version = "0.5.1"
 
 // Options configures an Android relay instance. New does not start processes or change networking.
 // Instances on one device share the reserved relay_sta0 interface and table 30555;
@@ -19,6 +21,23 @@ type Options struct {
 	RuntimeDir string
 	Tools      Tools
 	Logger     *slog.Logger
+}
+
+// validate checks dependencies before Run creates files or changes networking.
+func (t Tools) validate() error {
+	for _, tool := range []struct{ name, path string }{
+		{"iw", t.IW}, {"wpa_supplicant", t.WPASupplicant}, {"busybox", t.BusyBox},
+		{"ip", t.IP}, {"iptables", t.IPTables}, {"ip6tables", t.IP6Tables},
+	} {
+		info, err := os.Stat(tool.path)
+		if err != nil {
+			return fmt.Errorf("required tool %s (%s): %w", tool.name, tool.path, err)
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+			return fmt.Errorf("required tool %s (%s) is not an executable file", tool.name, tool.path)
+		}
+	}
+	return nil
 }
 
 // Tools contains absolute executable paths. Empty fields use the F50 Pro defaults.

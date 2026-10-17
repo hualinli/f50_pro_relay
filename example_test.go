@@ -2,8 +2,8 @@ package relay_test
 
 import (
 	"context"
-	"f50_pro_relay"
 	"fmt"
+	"github.com/hualinli/f50_pro_relay"
 	"time"
 )
 

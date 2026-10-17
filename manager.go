@@ -76,6 +76,9 @@ func (m *Manager) Run(ctx context.Context) (err error) {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
+	if e := m.options.Tools.validate(); e != nil {
+		return e
+	}
 	lock, e := installationLock(m.options.BaseDir)
 	if e != nil {
 		return e
